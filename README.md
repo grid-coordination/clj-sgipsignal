@@ -313,6 +313,16 @@ clojure -T:build install
 clojure -T:build deploy
 ```
 
+## Bulk Historical Data
+
+Monthly CSV exports of historical MOER data are available for all regions at `data.sgipsignal.com`, no authentication required:
+
+```bash
+curl -O https://data.sgipsignal.com/historical/SGIP_CAISO_PGE.zip
+```
+
+See the [download page](https://content.sgipsignal.com/download-data/) for all regions. This library does not wrap these downloads — they are static files outside the API.
+
 ## Relationship to clj-watttime
 
 WattTime operates two emissions signal APIs:
