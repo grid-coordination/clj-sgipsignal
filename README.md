@@ -4,6 +4,8 @@ A Clojure client library for the [SGIP Signal API](https://sgipsignal.com) — C
 
 [![Clojars](https://img.shields.io/clojars/v/energy.grid-coordination/clj-sgipsignal.svg)](https://clojars.org/energy.grid-coordination/clj-sgipsignal)
 [![Lint & Test](https://github.com/grid-coordination/clj-sgipsignal/actions/workflows/lint-test.yml/badge.svg)](https://github.com/grid-coordination/clj-sgipsignal/actions/workflows/lint-test.yml)
+[![md-docs](https://img.shields.io/badge/md--docs-included-green)](https://github.com/dcj/codox-md)
+[![build-provenance](https://img.shields.io/badge/build--provenance-included-blue)](https://github.com/dcj/build-provenance)
 
 ## Overview
 
@@ -46,7 +48,7 @@ For questions about API access, contact **SGIP@WattTime.org**.
 Add to your `deps.edn`:
 
 ```clojure
-energy.grid-coordination/clj-sgipsignal {:mvn/version "0.1.0"}
+energy.grid-coordination/clj-sgipsignal {:mvn/version "0.2.0"}
 ```
 
 Or use a git dependency:
