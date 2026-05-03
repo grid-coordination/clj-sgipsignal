@@ -20,7 +20,8 @@ See the [SGIP Signal API documentation](https://docs.sgipsignal.com/) for full d
 ## Features
 
 - **Raw API access** — stateless HTTP functions returning full hato responses
-- **Entity coercion** — raw snake_case JSON responses coerced to namespaced Clojure maps with Instants, Durations, and tick intervals (following the [clj-oa3](https://github.com/grid-coordination/clj-oa3) entity pattern)
+- **Entity coercion** — raw snake_case JSON responses coerced to namespaced Clojure maps with `ZonedDateTime`s, `Duration`s, and tick intervals (following the [clj-oa3](https://github.com/grid-coordination/clj-oa3) entity pattern)
+- **Per-instance `:zone`** — every coerced timestamp is a `ZonedDateTime` in the configured `ZoneId` (default `ZoneOffset/UTC`); the SGIP wire is always UTC, so `:zone` is purely a presentation choice
 - **Malli schemas** — two-layer validation: raw API shapes and coerced entity shapes
 - **JWT auth management** — automatic login and token refresh (30-minute tokens, refresh at 25 minutes)
 - **Rate limiting** — sliding-window rate limiter (default 10 req/s per [API restrictions](https://docs.sgipsignal.com/#tag/Introduction/Restrictions): 3,000 requests per 5-minute rolling window)
@@ -48,7 +49,7 @@ For questions about API access, contact **SGIP@WattTime.org**.
 Add to your `deps.edn`:
 
 ```clojure
-energy.grid-coordination/clj-sgipsignal {:mvn/version "0.2.0"}
+energy.grid-coordination/clj-sgipsignal {:mvn/version "0.3.0"}
 ```
 
 Or use a git dependency:
@@ -64,21 +65,25 @@ io.github.grid-coordination/clj-sgipsignal
 (require '[sgipsignal.client :as sgip])
 
 ;; Create a client (credentials from env vars SGIP_USER / SGIP_PASSWORD)
+;; Default :zone is ZoneOffset/UTC — all coerced timestamps come back as
+;; ZonedDateTimes in UTC.
 (def client (sgip/make-client))
 
-;; Or provide credentials explicitly
-(def client (sgip/make-client {:username "myuser" :password "mypass"}))
+;; Or provide credentials and/or a presentation zone explicitly
+(def client (sgip/make-client {:username "myuser"
+                               :password "mypass"
+                               :zone     "America/Los_Angeles"}))
 
 ;; Get current MOER for PG&E territory
 (sgip/moer* client {:ba "SGIP_CAISO_PGE"})
 ;; => {:sgipsignal.response/data
-;;      [{:sgipsignal.moer/point-time #inst "2026-04-19T14:55:00Z",
+;;      [{:sgipsignal.moer/point-time #time/zoned-date-time "2026-04-19T14:55Z[UTC]",
 ;;        :sgipsignal.moer/value 0.0,
 ;;        :sgipsignal.moer/ba "SGIP_CAISO_PGE",
 ;;        :sgipsignal.moer/version "2.0",
 ;;        :sgipsignal.moer/freq 300,
-;;        :tick/beginning #inst "2026-04-19T14:55:00Z",
-;;        :tick/end #inst "2026-04-19T15:00:00Z"}]}
+;;        :tick/beginning #time/zoned-date-time "2026-04-19T14:55Z[UTC]",
+;;        :tick/end #time/zoned-date-time "2026-04-19T15:00Z[UTC]"}]}
 
 ;; Get 72-hour forecast
 (sgip/forecast* client {:ba "SGIP_CAISO_SCE"})
@@ -168,21 +173,26 @@ Also available: `register`, `password-reset`, `forecast`, `long-forecast`.
 
 ### Layer 2: `sgipsignal.entities` — Coercion
 
-Transforms raw API responses into namespaced Clojure entities. Every coerced entity carries the original raw data as `:sgipsignal/raw` metadata.
+Transforms raw API responses into namespaced Clojure entities. Every coerced entity carries the original raw data as `:sgipsignal/raw` metadata. Each `->*-response` / `->*-point` function takes an optional `zone` argument (`ZoneId` or zone-id string, default UTC) used to express timestamps as `ZonedDateTime`s.
 
 ```clojure
 (require '[sgipsignal.entities :as entities])
 
 (def raw-response (:body (api/moer cfg {:ba "SGIP_CAISO_PGE"})))
+
+;; Default UTC zone
 (def coerced (entities/->moer-response raw-response))
 
-(:sgipsignal.response/data coerced)
-;; => [{:sgipsignal.moer/point-time #inst "2026-04-19T14:55:00Z"
+;; Or pass a presentation zone explicitly
+(def coerced-la (entities/->moer-response raw-response "America/Los_Angeles"))
+
+(:sgipsignal.response/data coerced-la)
+;; => [{:sgipsignal.moer/point-time #time/zoned-date-time "2026-04-19T07:55-07:00[America/Los_Angeles]"
 ;;      :sgipsignal.moer/value 0.0
 ;;      :sgipsignal.moer/ba "SGIP_CAISO_PGE"
 ;;      :sgipsignal.moer/freq 300
-;;      :tick/beginning #inst "2026-04-19T14:55:00Z"
-;;      :tick/end #inst "2026-04-19T15:00:00Z"} ...]
+;;      :tick/beginning #time/zoned-date-time "2026-04-19T07:55-07:00[America/Los_Angeles]"
+;;      :tick/end #time/zoned-date-time "2026-04-19T08:00-07:00[America/Los_Angeles]"} ...]
 
 ;; Access original raw data
 (:sgipsignal/raw (meta coerced))
@@ -250,6 +260,45 @@ Long forecasts label each data point with a `time-of-day` value (Pacific Standar
 | Evening | 16:00 -- 20:55 |
 | Night | 21:00 -- 05:55 |
 
+## Time and Timezones
+
+The SGIP Signal wire is **always UTC**, but the two endpoints serialize it differently:
+
+| Endpoint | Wire format | Example |
+|----------|-------------|---------|
+| `/sgipmoer` | `Z` suffix | `"2026-04-19T14:55:00Z"` |
+| `/sgipforecast` | `+00:00` offset | `"2026-04-19T15:05:00+00:00"` |
+| `/sgiplongforecast` | `+00:00` offset | `"2026-04-19T00:00:00+00:00"` |
+
+Both forms parse cleanly via `java.time.OffsetDateTime/parse` — there is no DST ambiguity on the wire.
+
+**Coerced layer:** every coerced timestamp is a `java.time.ZonedDateTime`. The parser reads the wire string to fix the UTC instant, then `.atZoneSameInstant`s it into the client's configured `:zone` — so the underlying instant is unchanged and only the wall-clock presentation differs.
+
+**Zone source: per-instance config** at client construction (default `ZoneOffset/UTC`):
+
+```clojure
+;; Default — UTC ZonedDateTimes
+(sgip/make-client)
+
+;; Pacific presentation
+(sgip/make-client {:zone "America/Los_Angeles"})
+
+;; Or pass a ZoneId directly
+(sgip/make-client {:zone (java.time.ZoneId/of "America/Los_Angeles")})
+```
+
+The configured zone flows from the client through `moer*` / `forecast*` / `long-forecast*` into every coerced timestamp (`:sgipsignal.moer/point-time`, `:sgipsignal.forecast/point-time`, `:sgipsignal.long-forecast/point-time`, `:sgipsignal.response/generated-at`, and the `:tick/beginning` / `:tick/end` interval keys). Callers that want a `java.time.Instant` can call `.toInstant` on any of these values.
+
+For one-off coercion (re-coercing a hand-built response, tests, or overriding the client zone), the entity functions accept an explicit zone argument:
+
+```clojure
+(entities/->moer-response body)                          ;; default UTC
+(entities/->moer-response body "America/Los_Angeles")    ;; explicit zone
+(entities/->moer-response body (java.time.ZoneId/of "America/Los_Angeles"))
+```
+
+**On UTC wire and DST:** because the wire moment is always UTC, parsing is unambiguous — no DST gap or overlap exists in the source data. The configured `:zone` is applied for *presentation* of that UTC instant; arithmetic on the resulting `ZonedDateTime` is DST-correct in the chosen zone (e.g. adding 1 day to a `ZonedDateTime` in `America/Los_Angeles` lands on the next wall-clock midnight, crossing transition days correctly).
+
 ## Regions
 
 The SGIP Signal covers 11 grid regions across California and neighboring areas:
@@ -286,6 +335,8 @@ Community Choice Aggregators (CCAs) use the grid region of their underlying inve
   {:username       "user"                    ;; or env SGIP_USER
    :password       "pass"                    ;; or env SGIP_PASSWORD
    :base-url       "https://sgipsignal.com"  ;; default
+   :zone           "America/Los_Angeles"     ;; presentation zone for ZonedDateTimes
+                                             ;; (ZoneId or zone-id string; default ZoneOffset/UTC)
    :max-per-second 10                        ;; rate limit, default 10
    :user-agent     "my-app/1.0"})            ;; custom User-Agent
 ```

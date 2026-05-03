@@ -12,7 +12,8 @@
             [sgipsignal.client :as client]
             [sgipsignal.entities :as entities]
             [sgipsignal.entities.schema :as schema]
-            [sgipsignal.entities.schema.raw :as raw]))
+            [sgipsignal.entities.schema.raw :as raw])
+  (:import [java.time ZoneId ZonedDateTime]))
 
 ;; ---------------------------------------------------------------------------
 ;; Fixture: skip if credentials not available
@@ -62,7 +63,7 @@
             (is (= 1 (count (:sgipsignal.response/data coerced))))
             (is (nil? (m/explain schema/MoerResponse coerced)))
             (let [dp (first (:sgipsignal.response/data coerced))]
-              (is (instance? java.time.Instant (:sgipsignal.moer/point-time dp)))
+              (is (instance? ZonedDateTime (:sgipsignal.moer/point-time dp)))
               (is (number? (:sgipsignal.moer/value dp)))
               (is (= "SGIP_CAISO_PGE" (:sgipsignal.moer/ba dp)))
               (is (some? (:tick/beginning dp)))
@@ -115,11 +116,11 @@
           (is (nil? (m/explain raw/ForecastResponse body))))
         (testing "coerces to valid entity"
           (let [coerced (entities/->forecast-response body)]
-            (is (instance? java.time.Instant (:sgipsignal.response/generated-at coerced)))
+            (is (instance? ZonedDateTime (:sgipsignal.response/generated-at coerced)))
             (is (pos? (count (:sgipsignal.response/data coerced))))
             (is (nil? (m/explain schema/ForecastResponse coerced)))
             (let [dp (first (:sgipsignal.response/data coerced))]
-              (is (instance? java.time.Instant (:sgipsignal.forecast/point-time dp)))
+              (is (instance? ZonedDateTime (:sgipsignal.forecast/point-time dp)))
               (is (number? (:sgipsignal.forecast/value dp)))
               (is (some? (:tick/beginning dp)))
               (is (some? (:tick/end dp))))))))))
@@ -152,7 +153,7 @@
             (is (pos? (count (:sgipsignal.response/data coerced))))
             (is (nil? (m/explain schema/LongForecastResponse coerced)))
             (let [dp (first (:sgipsignal.response/data coerced))]
-              (is (instance? java.time.Instant (:sgipsignal.long-forecast/point-time dp)))
+              (is (instance? ZonedDateTime (:sgipsignal.long-forecast/point-time dp)))
               (is (number? (:sgipsignal.long-forecast/percentile-15th dp)))
               (is (number? (:sgipsignal.long-forecast/percentile-85th dp)))
               (is (string? (:sgipsignal.long-forecast/time-of-day dp)))
@@ -181,3 +182,18 @@
       (is (some? result))
       (is (= "SGIP_CAISO_SCE"
              (:sgipsignal.moer/ba (first (:sgipsignal.response/data result))))))))
+
+;; ---------------------------------------------------------------------------
+;; Per-instance :zone — non-UTC presentation
+;; ---------------------------------------------------------------------------
+
+(deftest zoned-client-test
+  (testing "client constructed with :zone returns ZonedDateTimes in that zone"
+    (let [la-zone (ZoneId/of "America/Los_Angeles")
+          la-client (client/make-client {:zone la-zone})
+          result (client/moer* la-client {:ba "SGIP_CAISO_PGE"})
+          dp (first (:sgipsignal.response/data result))]
+      (is (instance? ZonedDateTime (:sgipsignal.moer/point-time dp)))
+      (is (= la-zone (.getZone ^ZonedDateTime (:sgipsignal.moer/point-time dp))))
+      (is (= la-zone (.getZone ^ZonedDateTime (:tick/beginning dp))))
+      (is (= la-zone (.getZone ^ZonedDateTime (:tick/end dp)))))))

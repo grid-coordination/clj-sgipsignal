@@ -10,11 +10,22 @@
   (:require [sgipsignal.api :as api]
             [sgipsignal.auth :as auth]
             [sgipsignal.entities :as entities]
-            [sgipsignal.rate-limit :as rl]))
+            [sgipsignal.rate-limit :as rl])
+  (:import [java.time ZoneId ZoneOffset]))
 
 ;; ---------------------------------------------------------------------------
 ;; Client creation
 ;; ---------------------------------------------------------------------------
+
+(defn- ->zone-id
+  "Coerce a `ZoneId` or a zone-id string (e.g. \"America/Los_Angeles\")
+  to a `ZoneId`. Throws on any other type."
+  ^ZoneId [zone]
+  (cond
+    (instance? ZoneId zone) zone
+    (string? zone)          (ZoneId/of zone)
+    :else                   (throw (ex-info "Invalid :zone — expected ZoneId or zone-id string"
+                                            {:zone zone :type (type zone)}))))
 
 (defn make-client
   "Create an SGIP Signal client with automatic auth and rate limiting.
@@ -23,16 +34,23 @@
     :username       — SGIP Signal username (or env SGIP_USER)
     :password       — SGIP Signal password (or env SGIP_PASSWORD)
     :base-url       — API base URL (default https://sgipsignal.com)
+    :zone           — ZoneId or zone-id string used by the coercion
+                      layer to express timestamps as ZonedDateTimes
+                      (default ZoneOffset/UTC). The SGIP Signal wire
+                      is always UTC; this value is the presentation
+                      zone for coerced ZonedDateTimes.
     :max-per-second — Rate limit (default 10)
     :user-agent     — Custom User-Agent string"
   ([] (make-client {}))
   ([opts]
    (let [auth-mgr (auth/create-auth opts)
-         limiter  (rl/create-limiter (select-keys opts [:max-per-second]))]
+         limiter  (rl/create-limiter (select-keys opts [:max-per-second]))
+         zone     (->zone-id (:zone opts ZoneOffset/UTC))]
      {:auth       auth-mgr
       :limiter    limiter
       :base-url   (or (:base-url opts) api/default-base-url)
-      :user-agent (:user-agent opts)})))
+      :user-agent (:user-agent opts)
+      :zone       zone})))
 
 (defn- client-cfg
   "Build an API config map from a client, obtaining a fresh token."
@@ -75,22 +93,25 @@
 
 (defn moer*
   "Like `moer` but returns a coerced MoerResponse entity.
-  Normalizes both single-object and array responses to a vector."
+  Normalizes both single-object and array responses to a vector.
+  Timestamps are ZonedDateTimes in the client's configured `:zone`."
   [client params]
   (let [resp (moer client params)]
     (when (api/success? resp)
-      (entities/->moer-response (api/body resp)))))
+      (entities/->moer-response (api/body resp) (:zone client)))))
 
 (defn forecast*
-  "Like `forecast` but returns a coerced ForecastResponse entity."
+  "Like `forecast` but returns a coerced ForecastResponse entity.
+  Timestamps are ZonedDateTimes in the client's configured `:zone`."
   [client params]
   (let [resp (forecast client params)]
     (when (api/success? resp)
-      (entities/->forecast-response (api/body resp)))))
+      (entities/->forecast-response (api/body resp) (:zone client)))))
 
 (defn long-forecast*
-  "Like `long-forecast` but returns a coerced LongForecastResponse entity."
+  "Like `long-forecast` but returns a coerced LongForecastResponse entity.
+  Timestamps are ZonedDateTimes in the client's configured `:zone`."
   [client params]
   (let [resp (long-forecast client params)]
     (when (api/success? resp)
-      (entities/->long-forecast-response (api/body resp)))))
+      (entities/->long-forecast-response (api/body resp) (:zone client)))))
