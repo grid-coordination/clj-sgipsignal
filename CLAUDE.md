@@ -1,1 +1,0 @@
-/Users/dcj/projects/grid/shadow-repo/clj-sgipsignal/CLAUDE.md
