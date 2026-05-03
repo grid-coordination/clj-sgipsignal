@@ -341,6 +341,14 @@ WattTime operates two emissions signal APIs:
 
 Both APIs share the same authentication pattern (HTTP Basic -> JWT token) and were built by WattTime. This library mirrors the architecture of clj-watttime.
 
+## Contributing
+
+Issues, Discussions, and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (and the dev commands: tests, integration tests, lint, nREPL). In short:
+
+- **Questions, API/design discussion, SGIP Signal behavior gaps** → [Discussions](https://github.com/grid-coordination/clj-sgipsignal/discussions)
+- **Confirmed bugs, coercion/schema fixes, doc errors** → [Issues](https://github.com/grid-coordination/clj-sgipsignal/issues)
+- **Patches** → pull requests; please open a Discussion or Issue first for non-trivial changes (new endpoints, new schema fields, new coercion behavior)
+
 ## License
 
 Copyright (c) 2026 Clark Communications Corporation. All rights reserved.
